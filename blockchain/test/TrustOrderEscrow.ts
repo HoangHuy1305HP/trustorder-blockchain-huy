@@ -1,7 +1,9 @@
 import { expect } from "chai";
 import hre from "hardhat";
 import { parseEther } from "ethers";
-import { time } from "@nomicfoundation/hardhat-network-helpers";
+import { network } from "hardhat";
+
+const { ethers, networkHelpers: { time } } = await network.create();
 
 describe("TrustOrderEscrow", function () {
     let seller: any;
@@ -14,7 +16,7 @@ describe("TrustOrderEscrow", function () {
     let deadline: number;
 
     beforeEach(async function () {
-        hardhatEthers = (hre as any).ethers;
+        hardhatEthers = ethers;
         [seller, buyer, outsider] = await hardhatEthers.getSigners();
 
         escrow = await hardhatEthers.deployContract("TrustOrderEscrow");
