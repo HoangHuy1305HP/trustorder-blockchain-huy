@@ -1,6 +1,6 @@
 # Giao diện bàn giao Huy ↔ Hùng
 
-Đây là **đề xuất để thống nhất**, chưa mô tả contract đã tồn tại. Nếu Hùng đã viết contract khác, giữ contract làm nguồn xác thực và sửa adapter thay vì sửa toàn bộ giao diện.
+Frontend dùng ABI từ artifact của TrustOrderEscrow. Cập nhật ABI từ artifact mỗi khi contract đổi.
 
 ## Thông tin cần nhận
 
@@ -11,7 +11,7 @@
 - Hạn tính theo giây Unix và thời gian block; cách giải quyết trường hợp đã giao nhưng người mua không xác nhận.
 - Hai tài khoản local được cấp ETH, kịch bản tạo dữ liệu, lệnh chạy node và deploy trong repository contract của Hùng.
 
-## Model đề xuất
+## Model dữ liệu
 
 ```solidity
 enum Status { Created, Funded, Shipped, Completed, Refunded }
@@ -30,7 +30,7 @@ struct Order {
 
 Frontend dùng `amount` dạng chuỗi ETH, số tiền được chuyển bằng `parseEther/formatEther`, không dùng phép nhân Number cho chuyển tiền. Thời gian frontend là milliseconds; adapter đổi sang seconds khi gửi và ngược lại khi đọc.
 
-## Hàm đề xuất
+## Hàm contract
 
 | Hàm | Quyền và ý nghĩa |
 | --- | --- |
@@ -64,8 +64,8 @@ VITE_RPC_URL=http://127.0.0.1:8545
 VITE_CONTRACT_ADDRESS=0x_DIEN_DIA_CHI_DEPLOY_THUC_TE
 ```
 
-## Quy tắc bắt buộc phải chốt
+## Giải ngân sau 48 giờ
 
-Khi đã Shipped mà buyer không xác nhận, tiền có thể bị giữ vô thời hạn theo luồng hiện tại. **Chưa chốt chính sách giải quyết.** Nhóm cần chọn giải pháp, xác định ai được thao tác và khi nào, rồi cập nhật contract, UI, báo cáo và test cùng nhau. Bản này chỉ thông báo chờ xác nhận; không tự giải ngân sau hạn, không cho refund đơn Shipped.
+Contract ghi `sellerClaimAt(id)` khi người bán đánh dấu đã giao. Frontend đổi mốc Unix seconds này sang milliseconds. Người bán gọi `claimAfterTimeout(id)` khi thời gian block đã đến mốc và đơn còn ở `Shipped`. Người mua vẫn có thể gọi `confirmReceived(id)` khi đơn còn ở trạng thái này. Giao dịch hợp lệ đầu tiên hoàn tất đơn và giải ngân.
 
-Thời gian UI dựa đồng hồ máy và cập nhật mỗi giây. Contract dùng `block.timestamp` làm nguồn quyết định; thời điểm sát hạn có thể bị revert. Receipt thành công mới được coi là xác nhận giao dịch. Các kiểm tra UI chỉ giúp người dùng, không phải cơ chế bảo mật.
+Chế độ MetaMask lấy timestamp từ block mới nhất khi làm mới và đọc lại trước khi gửi giao dịch. Chế độ Demo dùng giờ máy. Contract quyết định theo thời gian và trạng thái tại block thực thi.

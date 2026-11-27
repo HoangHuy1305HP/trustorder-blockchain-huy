@@ -37,6 +37,31 @@ it('thực hiện toàn bộ giao dịch qua UI với hai vai trò', async () =>
   expect(screen.queryByRole('button', { name: 'Xác nhận đã nhận hàng' })).toBeNull()
 }, 20000)
 
+it('chỉ hiện nút giải ngân cho người bán khi đã đến mốc', async () => {
+  const user = userEvent.setup()
+  const label = 'Yêu cầu giải ngân sau 48 giờ'
+  render(<App />)
+  await screen.findByText('Bàn phím cơ Keychron K2')
+  await navigate('/orders/3')
+  await user.selectOptions(screen.getByLabelText('Ví demo'), DEMO_SELLER)
+  expect(screen.queryByRole('button', { name: label })).toBeNull()
+
+  const key = 'trustorder.demo.v1'
+  const state = JSON.parse(localStorage.getItem(key)!)
+  state.orders.find((order: { id: string }) => order.id === '3').sellerClaimAt = Date.now() - 1000
+  localStorage.setItem(key, JSON.stringify(state))
+
+  await user.selectOptions(screen.getByLabelText('Ví demo'), DEMO_BUYER)
+  await screen.findByRole('button', { name: 'Xác nhận đã nhận hàng' })
+  expect(screen.queryByRole('button', { name: label })).toBeNull()
+
+  await user.selectOptions(screen.getByLabelText('Ví demo'), DEMO_SELLER)
+  await user.click(await screen.findByRole('button', { name: label }))
+  await user.click(screen.getByRole('button', { name: 'Xác nhận' }))
+  await screen.findByText('Đã giải ngân cho người bán.')
+  expect(screen.queryByRole('button', { name: label })).toBeNull()
+})
+
 it('tìm kiếm và hiển thị empty state', async () => {
   const user = userEvent.setup()
   render(<App />)

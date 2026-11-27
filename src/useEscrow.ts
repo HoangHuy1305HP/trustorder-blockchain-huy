@@ -11,6 +11,7 @@ export function useEscrow() {
   const [mode, setMode] = useState<'demo' | 'live'>(config.initialMode)
   const [account, setAccount] = useState(DEMO_BUYER)
   const [wallet, setWallet] = useState<WalletInfo | null>(null)
+  const [chainTime, setChainTime] = useState<number | null>(null)
   const [orders, setOrders] = useState<Order[]>([])
   const [balance, setBalance] = useState('0')
   const [loading, setLoading] = useState(false)
@@ -29,14 +30,16 @@ export function useEscrow() {
     const version = ++request.current
     setLoading(true); setError('')
     if (mode === 'live' && (!wallet || wrongNetwork)) {
-      setOrders([]); setBalance('0'); setLoading(false); return
+      setChainTime(null); setOrders([]); setBalance('0'); setLoading(false); return
     }
     try {
-      const [rows, eth] = await Promise.all([service.list(), service.balance(activeAccount)])
+      const [rows, eth, timestamp] = await Promise.all([
+        service.list(), service.balance(activeAccount), mode === 'live' ? liveService.chainTime() : null,
+      ])
       if (version !== request.current) return
-      setOrders(rows); setBalance(eth)
+      setOrders(rows); setBalance(eth); setChainTime(timestamp)
     } catch (e) {
-      if (version === request.current) { setOrders([]); setBalance('0'); setError(errorMessage(e)) }
+      if (version === request.current) { setChainTime(null); setOrders([]); setBalance('0'); setError(errorMessage(e)) }
     } finally { if (version === request.current) setLoading(false) }
   }, [activeAccount, mode, service, wallet, wrongNetwork])
 
@@ -52,11 +55,11 @@ export function useEscrow() {
     let walletRequest = 0
     const sync = async () => {
       const version = ++walletRequest
-      epoch.current++; request.current++; setOrders([]); setBalance('0')
+      epoch.current++; request.current++; setChainTime(null); setOrders([]); setBalance('0')
       try { const info = await walletInfo(); if (!disposed && version === walletRequest) setWallet(info) }
       catch (e) { if (!disposed && version === walletRequest) { setWallet(null); setError(errorMessage(e)) } }
     }
-    const disconnected = () => { epoch.current++; request.current++; walletRequest++; setWallet(null); setOrders([]); setBalance('0') }
+    const disconnected = () => { epoch.current++; request.current++; walletRequest++; setWallet(null); setChainTime(null); setOrders([]); setBalance('0') }
     let provider: ReturnType<typeof injected> | undefined
     try {
       provider = injected()
@@ -81,7 +84,7 @@ export function useEscrow() {
   }
   function changeMode(next: 'demo' | 'live') {
     if (locked.current) return
-    epoch.current++; request.current++; setOrders([]); setWallet(null); setError(''); setTransaction(null); setMode(next)
+    epoch.current++; request.current++; setChainTime(null); setOrders([]); setWallet(null); setError(''); setTransaction(null); setMode(next)
   }
   async function execute(label: string, operation: (progress: (phase: 'signing' | 'pending', hash?: string) => void) => Promise<void>) {
     if (locked.current) return false
@@ -99,5 +102,5 @@ export function useEscrow() {
   }
   const create = (input: NewOrder) => execute('Tạo đơn hàng', p => service.create(input, activeAccount, p))
   const act = (action: Action, order: Order, label: string) => execute(label, p => service.act(action, order, activeAccount, p))
-  return { mode, changeMode, account: activeAccount, setAccount, wallet, orders, balance, loading, connecting, error, transaction, setTransaction, busy, wrongNetwork, refresh, connect, changeNetwork, create, act }
+  return { mode, changeMode, account: activeAccount, setAccount, wallet, orders, chainTime, balance, loading, connecting, error, transaction, setTransaction, busy, wrongNetwork, refresh, connect, changeNetwork, create, act }
 }

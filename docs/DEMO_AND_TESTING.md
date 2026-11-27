@@ -39,7 +39,7 @@
 
 ## Kiểm thử MetaMask sau khi có contract
 
-Chỉ đánh dấu đạt sau khi chạy với contract thật của Hùng trên mạng local. ABI đề xuất hiện chưa thay thế bằng ABI bàn giao.
+Chỉ đánh dấu đạt sau khi chạy với contract thật của Hùng trên mạng local.
 
 | Tình huống | Kết quả mong đợi |
 | --- | --- |
@@ -68,3 +68,11 @@ npm run build
 ```
 
 Tests kiểm tra quyền/trạng thái/thời hạn, bảo toàn số dư demo, ngăn thanh toán lặp, ánh xạ contract và luồng thao tác giao diện. Đây không phải test bảo mật smart contract. Hùng cần test contract độc lập bằng Hardhat.
+
+
+### Giải ngân khi người mua không phản hồi
+
+1. Dùng ví người bán tạo đơn, chuyển sang ví người mua để nạp ETH, rồi chuyển lại ví người bán để đánh dấu đã giao.
+2. Xác nhận giao diện hiện mốc giải ngân và chưa hiện nút yêu cầu giải ngân.
+3. Trên Hardhat local, tăng thời gian block tới mốc hiển thị bằng `evm_increaseTime` rồi mine với `evm_mine`. Bấm **Làm mới** và giữ ví người bán.
+4. Bấm **Yêu cầu giải ngân sau 48 giờ**, xác nhận trên giao diện rồi ký trong MetaMask. Sau khi có receipt, đơn hiển thị hoàn tất và người bán nhận tiền ký quỹ, trừ phí gas của giao dịch.

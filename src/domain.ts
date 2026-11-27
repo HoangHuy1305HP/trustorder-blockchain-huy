@@ -1,17 +1,17 @@
 import { getAddress, isAddress, parseEther, ZeroAddress } from 'ethers'
 
 export type Status = 'created' | 'funded' | 'shipped' | 'completed' | 'refunded'
-export type Action = 'fund' | 'ship' | 'complete' | 'refund'
+export type Action = 'fund' | 'ship' | 'complete' | 'claim' | 'refund'
 export interface Order {
   id: string; title: string; description: string; seller: string; buyer: string
-  amount: string; createdAt: number; deadline: number; status: Status
+  amount: string; createdAt: number; deadline: number; sellerClaimAt?: number; status: Status
 }
 export interface NewOrder { title: string; description: string; buyer: string; amount: string; deadline: number }
 export const STATUS: Record<Status, string> = {
   created: 'Chờ ký quỹ', funded: 'Đã ký quỹ', shipped: 'Đang giao hàng', completed: 'Hoàn tất', refunded: 'Đã hoàn tiền',
 }
 export const ACTION: Record<Action, string> = {
-  fund: 'Nạp ETH ký quỹ', ship: 'Đánh dấu đã giao', complete: 'Xác nhận đã nhận hàng', refund: 'Yêu cầu hoàn tiền',
+  fund: 'Nạp ETH ký quỹ', ship: 'Đánh dấu đã giao', complete: 'Xác nhận đã nhận hàng', claim: 'Yêu cầu giải ngân sau 48 giờ', refund: 'Yêu cầu hoàn tiền',
 }
 export function sameAddress(a: string, b: string) { return a.toLowerCase() === b.toLowerCase() }
 export function shortAddress(a: string) { return a ? `${a.slice(0, 6)}…${a.slice(-4)}` : 'Chưa kết nối' }
@@ -23,7 +23,10 @@ export function allowedActions(order: Order, account: string, now = Date.now()):
     if (buyer && now >= order.deadline) return ['refund']
     if (seller && now < order.deadline) return ['ship']
   }
-  if (order.status === 'shipped' && buyer) return ['complete']
+  if (order.status === 'shipped') {
+    if (buyer) return ['complete']
+    if (seller && order.sellerClaimAt !== undefined && now >= order.sellerClaimAt) return ['claim']
+  }
   return []
 }
 export function validateOrder(input: NewOrder, seller: string, now = Date.now()) {

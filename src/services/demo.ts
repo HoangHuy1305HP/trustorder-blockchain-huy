@@ -5,6 +5,7 @@ import type { OrderService, TxProgress } from './types'
 export const DEMO_SELLER = '0x1111111111111111111111111111111111111111'
 export const DEMO_BUYER = '0x2222222222222222222222222222222222222222'
 export const DEMO_OBSERVER = '0x3333333333333333333333333333333333333333'
+const RECEIPT_WINDOW_MS = 48 * 60 * 60 * 1000
 const KEY = 'trustorder.demo.v1'
 type DemoState = { orders: Order[]; balances: Record<string, string> }
 function seed(): DemoState {
@@ -14,7 +15,7 @@ function seed(): DemoState {
     orders: [
       { ...base, id: '1', title: 'Bàn phím cơ Keychron K2', amount: '0.025', status: 'created', deadline: now + 3 * 86400000 },
       { ...base, id: '2', title: 'Tai nghe Sony WH-1000XM5', amount: '0.08', status: 'funded', deadline: now + 2 * 86400000 },
-      { ...base, id: '3', title: 'Màn hình Dell UltraSharp 27”', amount: '0.12', status: 'shipped', deadline: now + 86400000 },
+      { ...base, id: '3', title: 'Màn hình Dell UltraSharp 27”', amount: '0.12', status: 'shipped', sellerClaimAt: now + RECEIPT_WINDOW_MS / 2, deadline: now + 86400000 },
       { ...base, id: '4', title: 'Chuột Logitech MX Master 3S', amount: '0.035', status: 'completed', deadline: now - 86400000 },
       { ...base, id: '5', title: 'Ổ cứng Samsung T7 1TB', amount: '0.04', status: 'funded', deadline: now - 3600000 },
     ],
@@ -63,11 +64,12 @@ export const demoService: OrderService = {
       if (balance < amount) throw new Error('Ví demo không đủ ETH.')
       state.balances[key] = formatEther(balance - amount)
     }
-    if (action === 'refund' || action === 'complete') {
+    if (action === 'ship') current.sellerClaimAt = Date.now() + RECEIPT_WINDOW_MS
+    if (action === 'refund' || action === 'complete' || action === 'claim') {
       const recipient = (action === 'refund' ? current.buyer : current.seller).toLowerCase()
       state.balances[recipient] = formatEther(parseEther(state.balances[recipient] || '10') + amount)
     }
-    current.status = ({ fund: 'funded', ship: 'shipped', complete: 'completed', refund: 'refunded' } as const)[action]
+    current.status = ({ fund: 'funded', ship: 'shipped', complete: 'completed', claim: 'completed', refund: 'refunded' } as const)[action]
     localStorage.setItem(KEY, JSON.stringify(state))
   },
 }

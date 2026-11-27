@@ -2,13 +2,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { parseEther } from 'ethers'
 import { DEMO_BUYER as buyer, DEMO_SELLER as seller } from './demo'
 
-const mocks = vi.hoisted(() => ({ contract: { getOrder: vi.fn(), orderCount: vi.fn(), fundOrder: vi.fn(), markShipped: vi.fn(), confirmReceived: vi.fn(), refundOrder: vi.fn(), createOrder: vi.fn() }, network: vi.fn(), code: vi.fn(), signer: vi.fn(), check: vi.fn() }))
+const mocks = vi.hoisted(() => ({ contract: { getOrder: vi.fn(), sellerClaimAt: vi.fn(), claimAfterTimeout: vi.fn(), orderCount: vi.fn(), fundOrder: vi.fn(), markShipped: vi.fn(), confirmReceived: vi.fn(), refundOrder: vi.fn(), createOrder: vi.fn() }, network: vi.fn(), block: vi.fn(), code: vi.fn(), signer: vi.fn(), check: vi.fn() }))
 vi.mock('../config', () => ({ config: { chainId: 31337, address: '0x4444444444444444444444444444444444444444' }, checkConfig: mocks.check }))
 vi.mock('./wallet', () => ({ injected: () => ({ request: vi.fn() }) }))
 vi.mock('ethers', async importOriginal => {
   const actual = await importOriginal<typeof import('ethers')>()
   return { ...actual, BrowserProvider: class {
     getNetwork = mocks.network
+    getBlock = mocks.block
     getCode = mocks.code
     getSigner = mocks.signer
   }, Contract: class { constructor() { return mocks.contract } } }
@@ -19,10 +20,12 @@ beforeEach(() => {
   vi.clearAllMocks()
   mocks.network.mockResolvedValue({ chainId: 31337n })
   mocks.code.mockResolvedValue('0x1234')
+  mocks.block.mockResolvedValue({ timestamp: 100 })
+  mocks.contract.sellerClaimAt.mockResolvedValue(200n)
   mocks.signer.mockResolvedValue({ getAddress: async () => buyer })
   mocks.contract.getOrder.mockResolvedValue(raw())
 })
-describe('Live adapter — proposed ABI', () => {
+describe('Live adapter', () => {
   it('ánh xạ wei và Unix seconds; từ chối enum chưa biết', () => {
     expect(mapOrder(raw())).toMatchObject({ id: '1', amount: '0.01', createdAt: 100000, status: 'created' })
     expect(() => mapOrder({ ...raw(), status: 99n })).toThrow('chưa được ánh xạ')
@@ -62,7 +65,21 @@ describe('Live adapter — proposed ABI', () => {
     await expect(liveService.act('refund', mapOrder(raw()), buyer, vi.fn())).rejects.toThrow('không hợp lệ')
     expect(mocks.contract.refundOrder).not.toHaveBeenCalled()
   })
-  it('đọc ID theo giao diện đề xuất và chặn danh sách vượt giới hạn', async () => {
+  it('chỉ gửi yêu cầu giải ngân của người bán từ đúng thời điểm contract quy định', async () => {
+    const shipped = { ...raw(), status: 2n }
+    mocks.contract.getOrder.mockResolvedValue(shipped)
+    mocks.signer.mockResolvedValue({ getAddress: async () => seller })
+    mocks.block.mockResolvedValue({ timestamp: 199 })
+    const progress = vi.fn()
+    await expect(liveService.act('claim', mapOrder(shipped), seller, progress)).rejects.toThrow('không hợp lệ')
+    expect(mocks.contract.claimAfterTimeout).not.toHaveBeenCalled()
+    mocks.block.mockResolvedValue({ timestamp: 200 })
+    mocks.contract.claimAfterTimeout.mockResolvedValue({ hash: '0xabc', wait: async () => ({ status: 1 }) })
+    await liveService.act('claim', mapOrder(shipped), seller, progress)
+    expect(mocks.contract.claimAfterTimeout).toHaveBeenCalledWith(1n)
+    expect(progress.mock.calls).toEqual([['signing'], ['pending', '0xabc']])
+  })
+  it('đọc ID từ 1 và chặn danh sách vượt giới hạn', async () => {
     mocks.contract.orderCount.mockResolvedValue(2n)
     expect(await liveService.list()).toHaveLength(2)
     expect(mocks.contract.getOrder).toHaveBeenCalledWith(1)
