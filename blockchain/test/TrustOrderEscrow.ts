@@ -1,5 +1,4 @@
 import { expect } from "chai";
-import hre from "hardhat";
 import { parseEther } from "ethers";
 import { network } from "hardhat";
 
@@ -154,5 +153,48 @@ describe("TrustOrderEscrow", function () {
         await expect(
             escrow.connect(buyer).confirmReceived(1n)
         ).to.be.revertedWith("INVALID_STATUS");
+    });
+    describe("seller claim after the receipt window", function () {
+        beforeEach(async function () {
+            await escrow.connect(buyer).fundOrder(1n, { value: amount });
+            await escrow.connect(seller).markShipped(1n);
+        });
+
+        it("starts the 48-hour window when the seller marks shipment", async function () {
+            expect(await escrow.sellerClaimAt(1n)).to.equal(BigInt(await time.latest()) + 48n * 3600n);
+        });
+
+        it("rejects a seller claim one second before the window closes", async function () {
+            const claimAt = await escrow.sellerClaimAt(1n);
+            await time.setNextBlockTimestamp(claimAt - 1n);
+            await expect(escrow.connect(seller).claimAfterTimeout(1n)).to.be.revertedWith("RECEIPT_WINDOW_OPEN");
+        });
+
+        it("rejects the buyer and an outsider after the window closes", async function () {
+            await time.increaseTo(await escrow.sellerClaimAt(1n));
+            await expect(escrow.connect(buyer).claimAfterTimeout(1n)).to.be.revertedWith("ONLY_SELLER");
+            await expect(escrow.connect(outsider).claimAfterTimeout(1n)).to.be.revertedWith("ONLY_SELLER");
+        });
+
+        it("pays the seller exactly once at the deadline", async function () {
+            const sellerBefore = await ethers.provider.getBalance(seller.address);
+            const claimAt = await escrow.sellerClaimAt(1n);
+            await time.setNextBlockTimestamp(claimAt);
+            const tx = await escrow.connect(seller).claimAfterTimeout(1n);
+            const receipt = await tx.wait();
+            expect((await ethers.provider.getBlock(receipt.blockNumber))?.timestamp).to.equal(Number(claimAt));
+            await expect(tx).to.emit(escrow, "OrderClaimedAfterTimeout").withArgs(1n, seller.address, amount);
+            expect(await ethers.provider.getBalance(seller.address)).to.equal(sellerBefore + amount - receipt.fee);
+            expect(await ethers.provider.getBalance(await escrow.getAddress())).to.equal(0n);
+            expect((await escrow.getOrder(1n)).status).to.equal(3n);
+            await expect(escrow.connect(seller).claimAfterTimeout(1n)).to.be.revertedWith("INVALID_STATUS");
+            await expect(escrow.connect(buyer).confirmReceived(1n)).to.be.revertedWith("INVALID_STATUS");
+        });
+
+        it("rejects the claim after the buyer has already confirmed receipt", async function () {
+            await escrow.connect(buyer).confirmReceived(1n);
+            await time.increaseTo(await escrow.sellerClaimAt(1n));
+            await expect(escrow.connect(seller).claimAfterTimeout(1n)).to.be.revertedWith("INVALID_STATUS");
+        });
     });
 });

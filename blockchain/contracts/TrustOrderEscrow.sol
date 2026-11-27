@@ -24,7 +24,9 @@ contract TrustOrderEscrow is ReentrancyGuard {
         Status status;
     }
 
+    uint256 public constant RECEIPT_WINDOW = 48 hours;
     uint256 public orderCount;
+    mapping(uint256 => uint256) public sellerClaimAt;
 
     mapping(uint256 => Order) private orders;
 
@@ -53,6 +55,8 @@ contract TrustOrderEscrow is ReentrancyGuard {
         address indexed seller,
         uint256 amount
     );
+
+    event OrderClaimedAfterTimeout(uint256 indexed id, address indexed seller, uint256 amount);
 
     event OrderRefunded(
         uint256 indexed id,
@@ -126,6 +130,7 @@ contract TrustOrderEscrow is ReentrancyGuard {
         require(block.timestamp < order.deadline, "SHIPPING_DEADLINE_PASSED");
 
         order.status = Status.Shipped;
+        sellerClaimAt[id] = block.timestamp + RECEIPT_WINDOW;
 
         emit OrderShipped(id, msg.sender);
     }
@@ -138,8 +143,23 @@ contract TrustOrderEscrow is ReentrancyGuard {
         require(msg.sender == order.buyer, "ONLY_BUYER");
         require(order.status == Status.Shipped, "INVALID_STATUS");
 
-        // Checks-Effects-Interactions:
-        // Cập nhật trạng thái trước khi chuyển ETH.
+        _paySeller(order);
+        emit OrderCompleted(id, order.buyer, order.seller, order.amount);
+    }
+
+    function claimAfterTimeout(uint256 id) external nonReentrant {
+        require(id > 0 && id <= orderCount, "ORDER_NOT_FOUND");
+
+        Order storage order = orders[id];
+        require(msg.sender == order.seller, "ONLY_SELLER");
+        require(order.status == Status.Shipped, "INVALID_STATUS");
+        require(block.timestamp >= sellerClaimAt[id], "RECEIPT_WINDOW_OPEN");
+
+        _paySeller(order);
+        emit OrderClaimedAfterTimeout(id, order.seller, order.amount);
+    }
+
+    function _paySeller(Order storage order) private {
         order.status = Status.Completed;
 
         uint256 amount = order.amount;
@@ -147,8 +167,6 @@ contract TrustOrderEscrow is ReentrancyGuard {
 
         (bool success, ) = seller.call{value: amount}("");
         require(success, "ETH_TRANSFER_FAILED");
-
-        emit OrderCompleted(id, order.buyer, order.seller, amount);
     }
 
     function refundOrder(uint256 id) external nonReentrant {
